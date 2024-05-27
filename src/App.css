@@ -1,0 +1,18 @@
+/* src/App.css */
+.App {
+  text-align: center;
+  font-family: 'Arial', sans-serif;
+}
+
+h1 {
+  color: #333;
+}
+
+.dashboard {
+  padding: 20px;
+}
+
+svg {
+  font-size: 10px;
+  font-family: 'Arial', sans-serif;
+}
