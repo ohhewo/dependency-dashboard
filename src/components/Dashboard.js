@@ -1,13 +1,32 @@
 // src/components/Dashboard.js
-import React from 'react';
+import React, { useState } from 'react';
 import Chart from './Chart';
-import data from '../data';
+import PredictedEndTimesTable from './PredictedEndTimesTable';
 
 const Dashboard = () => {
+  const [predictedEndTimes, setPredictedEndTimes] = useState([]);
+
   return (
-    <div>
-      <h1>System SLA Dashboard</h1>
-      <Chart data={data} />
+    <div className="dashboard-container">
+      <div className="sidebar">
+        <div className="sidebar-header">My Dashboard</div>
+        <nav>
+          <ul>
+            <li>Dashboard</li>
+            <li>Transactions</li>
+            <li>Reports</li>
+            <li>Settings</li>
+          </ul>
+        </nav>
+      </div>
+      <div className="main-content">
+        <div className="chart-container">
+          <Chart setPredictedEndTimes={setPredictedEndTimes} />
+        </div>
+        <div className="table-container">
+          <PredictedEndTimesTable data={predictedEndTimes} />
+        </div>
+      </div>
     </div>
   );
 };

@@ -1,24 +1,28 @@
 // src/components/Chart.js
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import * as d3 from 'd3';
+import data from '../data';
 
-const Chart = ({ data }) => {
+const Chart = ({ setPredictedEndTimes }) => {
   const chartRef = useRef();
+  const [showExpected, setShowExpected] = useState(false);
 
   useEffect(() => {
     const svg = d3.select(chartRef.current)
                   .attr('width', 800)
                   .attr('height', 400)
-                  .style('background', '#f4f4f4')
+                  .style('background', 'linear-gradient(145deg, #f5f7fa, #c3cfe2)') // Gradient background
                   .style('margin', '10px')
-                  .style('padding', '10px');
+                  .style('padding', '10px')
+                  .style('border-radius', '10px')
+                  .style('box-shadow', '0 4px 8px rgba(0,0,0,0.1)');
 
     // Clear existing contents
     svg.selectAll('*').remove();
 
     // Define scales
     const xScale = d3.scaleTime()
-                     .domain([new Date('2024-01-01'), new Date('2024-12-31')])
+                     .domain([new Date('2024-01-01T00:00:00'), new Date('2024-12-31T23:59:59')])
                      .range([50, 750]);
 
     const yScale = d3.scaleBand()
@@ -26,40 +30,160 @@ const Chart = ({ data }) => {
                      .range([50, 350])
                      .padding(0.1);
 
-    // Axes
-    const xAxis = d3.axisBottom(xScale).ticks(12).tickFormat(d3.timeFormat('%b'));
-    const yAxis = d3.axisLeft(yScale);
+    const xAxis = svg.append('g')
+                     .attr('transform', 'translate(0,350)')
+                     .call(d3.axisBottom(xScale).ticks(12).tickFormat(d3.timeFormat('%b')))
+                     .style('color', '#555'); // Light grey for text
 
-    svg.append('g')
-       .attr('transform', 'translate(0,350)')
-       .call(xAxis);
+    const yAxis = svg.append('g')
+                     .attr('transform', 'translate(50,0)')
+                     .call(d3.axisLeft(yScale).tickSize(0).tickPadding(10))
+                     .style('color', '#555'); // Light grey for text
 
-    svg.append('g')
-       .attr('transform', 'translate(50,0)')
-       .call(yAxis);
+    // Remove default Y-axis line
+    yAxis.selectAll("line").remove();
 
-    // Draw the bars
-    data.forEach(system => {
-      const systemGroup = svg.append('g').attr('class', 'system-group');
+    const tooltip = d3.select('body').append('div')
+                      .attr('class', 'tooltip')
+                      .style('position', 'absolute')
+                      .style('visibility', 'hidden')
+                      .style('background', '#333')
+                      .style('color', '#fff')
+                      .style('border', '1px solid #ccc')
+                      .style('padding', '10px')
+                      .style('border-radius', '4px');
 
-      system.actualTimings.forEach(timing => {
-        const startDate = new Date(timing.date + ' ' + timing.startTime);
-        const finishDate = new Date(timing.date + ' ' + timing.finishTime);
-        const slaDate = new Date(timing.date + ' ' + system.slaTime);
+    const calculatePredictedEndTimes = () => {
+      const predictions = [];
 
-        const withinSLA = finishDate <= slaDate;
+      data.forEach(system => {
+        system.actualTimings.forEach(timing => {
+          const finishDate = new Date(timing.date + 'T' + timing.finishTime);
+          const slaDate = new Date(timing.date + 'T' + system.slaTime);
 
-        systemGroup.append('rect')
-                   .attr('x', xScale(startDate))
-                   .attr('y', yScale(system.system))
-                   .attr('width', xScale(finishDate) - xScale(startDate))
-                   .attr('height', yScale.bandwidth())
-                   .attr('fill', withinSLA ? 'green' : 'red');
+          const withinSLA = finishDate <= slaDate;
+          if (!withinSLA) {
+            system.dependencies.forEach(dep => {
+              const dependentSystem = data.find(d => d.system === dep.system);
+              const depTiming = dependentSystem.actualTimings.find(t => t.date === timing.date);
+              if (depTiming) {
+                const depFinishDate = new Date(depTiming.date + 'T' + depTiming.finishTime);
+                const predictedEndDate = new Date(depFinishDate.getTime() + (finishDate.getTime() - slaDate.getTime()));
+                predictions.push({
+                  system: dep.system,
+                  originalEndDate: depFinishDate,
+                  predictedEndDate
+                });
+              }
+            });
+          }
+        });
       });
-    });
-  }, [data]);
 
-  return <svg ref={chartRef}></svg>;
+      setPredictedEndTimes(predictions);
+    };
+
+    const updateChart = (newXScale) => {
+      svg.selectAll('.system-group').remove();
+
+      data.forEach(system => {
+        const systemGroup = svg.append('g').attr('class', 'system-group');
+
+        system.actualTimings.forEach(timing => {
+          const startDate = new Date(timing.date + 'T' + timing.startTime);
+          const finishDate = new Date(timing.date + 'T' + timing.finishTime);
+          const slaDate = new Date(timing.date + 'T' + system.slaTime);
+
+          const withinSLA = finishDate <= slaDate;
+
+          systemGroup.append('rect')
+                     .attr('x', newXScale(startDate))
+                     .attr('y', yScale(system.system))
+                     .attr('width', newXScale(finishDate) - newXScale(startDate))
+                     .attr('height', yScale.bandwidth())
+                     .attr('fill', withinSLA ? '#007C43' : '#CE1430') // Green for within SLA, Red for breached SLA
+                     .on('mouseover', () => {
+                       tooltip.style('visibility', 'visible')
+                              .html(`<strong>${system.system}</strong><br>
+                                     Date: ${timing.date}<br>
+                                     Start: ${timing.startTime}<br>
+                                     Finish: ${timing.finishTime}<br>
+                                     SLA: ${withinSLA ? 'Met' : 'Breached'}`);
+                     })
+                     .on('mousemove', (event) => {
+                       tooltip.style('top', (event.pageY - 10) + 'px')
+                              .style('left', (event.pageX + 10) + 'px');
+                     })
+                     .on('mouseout', () => {
+                       tooltip.style('visibility', 'hidden');
+                     });
+
+          if (showExpected) {
+            const expectedStartDate = new Date(timing.date + 'T' + system.expectedStartTime);
+            const expectedFinishDate = new Date(timing.date + 'T' + system.expectedFinishTime);
+
+            systemGroup.append('line')
+                       .attr('x1', newXScale(expectedStartDate))
+                       .attr('y1', yScale(system.system))
+                       .attr('x2', newXScale(expectedStartDate))
+                       .attr('y2', yScale(system.system) + yScale.bandwidth())
+                       .attr('stroke', '#00838A') // Teal color for expected times
+                       .attr('stroke-width', 2)
+                       .attr('stroke-dasharray', '5,5');
+
+            systemGroup.append('line')
+                       .attr('x1', newXScale(expectedFinishDate))
+                       .attr('y1', yScale(system.system))
+                       .attr('x2', newXScale(expectedFinishDate))
+                       .attr('y2', yScale(system.system) + yScale.bandwidth())
+                       .attr('stroke', '#00838A') // Teal color for expected times
+                       .attr('stroke-width', 2)
+                       .attr('stroke-dasharray', '5,5');
+          }
+        });
+      });
+    };
+
+    const zoomed = (event) => {
+      const newXScale = event.transform.rescaleX(xScale);
+
+      let tickFormat;
+      const diff = newXScale.domain()[1] - newXScale.domain()[0];
+
+      if (diff < 1000 * 60 * 60 * 24) { // Less than a day
+        tickFormat = d3.timeFormat('%H:%M');
+      } else if (diff < 1000 * 60 * 60 * 24 * 30) { // Less than a month
+        tickFormat = d3.timeFormat('%d %b');
+      } else if (diff < 1000 * 60 * 60 * 24 * 365) { // Less than a year
+        tickFormat = d3.timeFormat('%b');
+      } else {
+        tickFormat = d3.timeFormat('%Y');
+      }
+
+      xAxis.call(d3.axisBottom(newXScale).ticks(12).tickFormat(tickFormat));
+      updateChart(newXScale);
+    };
+
+    const zoom = d3.zoom()
+                   .scaleExtent([1, 1000]) // Allows zooming in further
+                   .translateExtent([[0, 0], [800, 400]])
+                   .extent([[0, 0], [800, 400]])
+                   .on('zoom', zoomed);
+
+    svg.call(zoom);
+    updateChart(xScale); // Initial rendering
+    calculatePredictedEndTimes(); // Calculate predictions after rendering
+
+  }, [showExpected, setPredictedEndTimes]);
+
+  return (
+    <div>
+      <button onClick={() => setShowExpected(!showExpected)} style={{ backgroundColor: '#009EBE', color: '#fff', border: 'none', padding: '10px', borderRadius: '5px', marginBottom: '10px' }}>
+        Toggle Expected Times
+      </button>
+      <svg ref={chartRef}></svg>
+    </div>
+  );
 };
 
 export default Chart;
