@@ -9,11 +9,10 @@ const Chart = ({ setPredictedEndTimes }) => {
 
   useEffect(() => {
     const svg = d3.select(chartRef.current)
-                  .attr('width', 800)
-                  .attr('height', 400)
+                  .attr('width', '100%')
+                  .attr('height', '100%')
+                  .attr('viewBox', '0 0 800 400') // Ensures the content scales
                   .style('background', 'linear-gradient(145deg, #f5f7fa, #c3cfe2)') // Gradient background
-                  .style('margin', '10px')
-                  .style('padding', '10px')
                   .style('border-radius', '10px')
                   .style('box-shadow', '0 4px 8px rgba(0,0,0,0.1)');
 
@@ -58,16 +57,16 @@ const Chart = ({ setPredictedEndTimes }) => {
 
       data.forEach(system => {
         system.actualTimings.forEach(timing => {
-          const finishDate = new Date(timing.date + 'T' + timing.finishTime);
-          const slaDate = new Date(timing.date + 'T' + system.slaTime);
+          const finishDate = new Date(timing.finishTime);
+          const slaDate = new Date(system.slaTime);
 
           const withinSLA = finishDate <= slaDate;
           if (!withinSLA) {
             system.dependencies.forEach(dep => {
               const dependentSystem = data.find(d => d.system === dep.system);
-              const depTiming = dependentSystem.actualTimings.find(t => t.date === timing.date);
+              const depTiming = dependentSystem.actualTimings.find(t => new Date(t.startTime).toDateString() === new Date(timing.startTime).toDateString());
               if (depTiming) {
-                const depFinishDate = new Date(depTiming.date + 'T' + depTiming.finishTime);
+                const depFinishDate = new Date(depTiming.finishTime);
                 const predictedEndDate = new Date(depFinishDate.getTime() + (finishDate.getTime() - slaDate.getTime()));
                 predictions.push({
                   system: dep.system,
@@ -90,24 +89,29 @@ const Chart = ({ setPredictedEndTimes }) => {
         const systemGroup = svg.append('g').attr('class', 'system-group');
 
         system.actualTimings.forEach(timing => {
-          const startDate = new Date(timing.date + 'T' + timing.startTime);
-          const finishDate = new Date(timing.date + 'T' + timing.finishTime);
-          const slaDate = new Date(timing.date + 'T' + system.slaTime);
+          const startDate = new Date(timing.startTime);
+          const finishDate = new Date(timing.finishTime);
+          const slaDate = new Date(system.slaTime);
 
           const withinSLA = finishDate <= slaDate;
+
+          const rectWidth = newXScale(finishDate) - newXScale(startDate);
+          if (rectWidth < 0) {
+            console.error('Invalid rectangle width:', rectWidth);
+            return;
+          }
 
           systemGroup.append('rect')
                      .attr('x', newXScale(startDate))
                      .attr('y', yScale(system.system))
-                     .attr('width', newXScale(finishDate) - newXScale(startDate))
+                     .attr('width', rectWidth)
                      .attr('height', yScale.bandwidth())
                      .attr('fill', withinSLA ? '#007C43' : '#CE1430') // Green for within SLA, Red for breached SLA
                      .on('mouseover', () => {
                        tooltip.style('visibility', 'visible')
                               .html(`<strong>${system.system}</strong><br>
-                                     Date: ${timing.date}<br>
-                                     Start: ${timing.startTime}<br>
-                                     Finish: ${timing.finishTime}<br>
+                                     Start: ${startDate.toLocaleString()}<br>
+                                     Finish: ${finishDate.toLocaleString()}<br>
                                      SLA: ${withinSLA ? 'Met' : 'Breached'}`);
                      })
                      .on('mousemove', (event) => {
@@ -119,8 +123,8 @@ const Chart = ({ setPredictedEndTimes }) => {
                      });
 
           if (showExpected) {
-            const expectedStartDate = new Date(timing.date + 'T' + system.expectedStartTime);
-            const expectedFinishDate = new Date(timing.date + 'T' + system.expectedFinishTime);
+            const expectedStartDate = new Date(system.expectedStartTime);
+            const expectedFinishDate = new Date(system.expectedFinishTime);
 
             systemGroup.append('line')
                        .attr('x1', newXScale(expectedStartDate))
@@ -177,7 +181,7 @@ const Chart = ({ setPredictedEndTimes }) => {
   }, [showExpected, setPredictedEndTimes]);
 
   return (
-    <div>
+    <div style={{ width: '100%', height: '100%' }}>
       <button onClick={() => setShowExpected(!showExpected)} style={{ backgroundColor: '#009EBE', color: '#fff', border: 'none', padding: '10px', borderRadius: '5px', marginBottom: '10px' }}>
         Toggle Expected Times
       </button>
